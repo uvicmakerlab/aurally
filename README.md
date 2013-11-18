@@ -5,5 +5,6 @@ Defn: With regard to sound or the ear; e.g. "the new musical was visually and au
 ## Dependencies
 
 SciPy Stack - http://www.scipy.org/install.html
+
 LAME - http://lame.sourceforge.net/
 

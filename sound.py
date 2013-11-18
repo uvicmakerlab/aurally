@@ -1,10 +1,12 @@
+from __future__ import  division
 import os
 import copy
+import debug
 import struct
+import logging
 import tempfile
 import subprocess
 import numpy as np
-from __future__ import  division
 
 class Wav:
     """
@@ -12,11 +14,13 @@ class Wav:
 
     Use the sound.load function to load a WAV file.
     """
+    @debug.trace(logging.DEBUG)
     def __init__(self, numChannels=None, sampleRate=None, sampleData=None):
         self.num_channels = numChannels
         self.sample_rate = sampleRate
         self.sample_data = sampleData
 
+@debug.trace(logging.DEBUG)
 def load(filepath):
     """
     Loads a .wav or .mp3 file from the given filepath.
@@ -46,6 +50,7 @@ def load(filepath):
     else:
         raise NotImplementedError(error_message, 'file must have \'.wav\' or \'.mp3\' extension.')
 
+@debug.trace(logging.DEBUG)
 def _load_wav(filename):
     """
     Helper for sound.load. Needed number of samples from wavfile, which scypi.io.wavfile doesn't
@@ -97,6 +102,7 @@ def _load_wav(filename):
 
         return Wav(num_channels, sample_rate, samples)
 
+@debug.trace(logging.DEBUG)
 def flatten_to_mono(wav):
     """
     Flattens the PCM data in wav (a Wav class instance) to mono if it's not mono already.
@@ -109,23 +115,29 @@ def flatten_to_mono(wav):
         return wav
 
     sample_rate = wav.sample_rate
-    num_frames = len(wav.sample_data) / num_channels
+    num_frames = int(len(wav.sample_data) / num_channels)
     samples = np.fromiter((np.sum(wav.sample_data[i * num_channels:i * num_channels + num_channels]) for i in range(num_frames)), dtype='int8')
 
     return Wav(1, sample_rate, samples)
 
+@debug.trace(logging.DEBUG)
 def normalize(wav):
+    if wav.num_channels > 1:
+        raise ValueError("Must be a mono wav file, flatten the channels first.")
+
     samples = wav.sample_data[:]
-    peakVal = np.amax(np.absolute(samples)
+    peakVal = float(np.amax(np.absolute(samples)))
 
     if peakVal == 0:
         raise ValueError('Wav file is completely silent, nothing to normalize!')
 
-    return Wav(wav.num_channels, wav.sample_rate, samples / float(peakVal))
+    return Wav(wav.num_channels, wav.sample_rate, samples / peakVal)
 
+@debug.trace(logging.DEBUG)
 def _h(x):
 	return (x + abs(x)) / 2
-	
+
+@debug.trace(logging.DEBUG)
 def spectral_difference(n, stft):
 	abs_stft = np.absolute(stft(n))
 	sd = _h(abs_stft(n) - abs_stft(n-1))**2
@@ -137,6 +149,7 @@ import unittest
 
 class SoundTest(unittest.TestCase):
     def setUp(self):
+        self.assertIsNotNone(self.which("lame"), "LAME executable not found, need to install for MP3 conversion.")
         pass
 
     def test_load_filepathNone_throwsValueError(self):
@@ -166,7 +179,7 @@ class SoundTest(unittest.TestCase):
             self.assertRaises(ValueError, load, f.name)
 
     def test_flattenToMono_arrayOfOnes_sumEqualsFrameWidth(self):
-        channels = 2
+        channels = 4
         rate = 44100
         num_frames = 10
         num_samples = num_frames * channels
@@ -180,8 +193,83 @@ class SoundTest(unittest.TestCase):
         self.assertEquals(len(m.sample_data), num_frames)
         self.assertTrue(np.array_equal(m.sample_data, channels * w.sample_data[::channels]))
 
+    def test_flattenToMono_arrayOfZeros_sumStillZero(self):
+        channels = 4
+        rate = 44100
+        num_frames = 10
+        num_samples = num_frames * channels
+        samples = np.zeros(shape=(num_samples,), dtype='int8')
+
+        w = Wav(channels, rate, samples)
+        m = flatten_to_mono(w)
+
+        self.assertEquals(m.num_channels, 1)
+        self.assertEquals(m.sample_rate, rate)
+        self.assertEquals(len(m.sample_data), num_frames)
+        self.assertTrue(np.array_equal(m.sample_data, w.sample_data[::channels]))
+
+    def test_flattenToMono_arrayAranged_equalsSumOfRange(self):
+        channels = 4
+        rate = 44100
+        num_frames = 10
+        num_samples = num_frames * channels
+        samples = np.array([np.arange(channels) for i in range(num_frames)], dtype='int8').flatten()
+
+        w = Wav(channels, rate, samples)
+        m = flatten_to_mono(w)
+
+        self.assertEquals(m.num_channels, 1)
+        self.assertEquals(m.sample_rate, rate)
+        self.assertEquals(len(m.sample_data), num_frames)
+        compare = sum(range(channels)) * np.ones(shape=(len(w.sample_data[::channels]),), dtype='int8')
+        self.assertTrue(np.array_equal(m.sample_data, compare))
+
+    def test_normalize_nonMonoChannelWav_throwsValueError(self):
+        w = Wav(2, 41100, np.ones(shape=(4096,), dtype='int8'))
+        self.assertRaises(ValueError, normalize, w)
+
+    def test_normalize_arrayOfZeros_throwsValueError(self):
+        w = Wav(1, 41100, np.zeros(shape=(4096,), dtype='int8'))
+        self.assertRaises(ValueError, normalize, w)
+
+    def test_normalize_arrayOfOnes_unchanged(self):
+        w = Wav(1, 44100, np.ones(shape=(4096,), dtype='int8'))
+        n = normalize(w)
+        self.assertTrue(np.array_equal(n.sample_data, np.ones(shape=(4096,), dtype='int8')))
+
+    # Helper Methods
+    def which(self, executable_path):
+        def is_exe(filepath):
+            return os.path.isfile(filepath) and os.access(filepath, os.X_OK)
+
+        path, name = os.path.split(executable_path)
+        if path and is_exe(executable_path):
+            return executable_path
+        else:
+            for path in os.environ["PATH"].split(os.pathsep):
+                path = path.strip()
+                exe_file = os.path.join(path, name)
+                if is_exe(exe_file):
+                    return exe_file
+
+        return None
+
 
 
 if __name__ == '__main__':
+    import sys
+    import optparse
+    opt_parser = optparse.OptionParser()
+    opt_parser.add_option('-v', '--verbose', dest='verbose', action='count', help='Increase verbosity, -v < -vv < -vvv.')
+    opts, args = opt_parser.parse_args()
+
+    log_level = logging.WARNING
+    if opts.verbose == 1:
+        log_level = logging.INFO
+    elif opts.verbose >= 2:
+        log_level = logging.DEBUG
+
+    debug.configure(level=log_level)
+
     unittest.main()
 

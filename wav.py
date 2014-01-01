@@ -25,9 +25,6 @@ class Wav:
         assert filepath is not None, 'Filename cannot be None.'
         assert filepath.strip() != '', 'Filename cannot be empty or whitespace.'
 
-        filename, extension = os.path.splitext(filepath)
-        assert extension.lower() == '.wav', 'Cannot load files with \'{0}\' extension.'.format(extension)
-        
         self.sample_rate, self.data = wavfile.read(filepath)
 
 if __name__ == '__main__':

@@ -1,5 +1,6 @@
 import os
 import tempfile
+import subprocess
 import scipy.io.wavfile as wavfile
 
 def load(filepath):
@@ -24,9 +25,10 @@ def load(filepath):
         return wavfile.read(filepath)
     elif extension.lower() == '.mp3':
         with tempfile.NamedTemporaryFile(suffix='.wav') as temp:
-            cmd = 'lame --decode {0} {1}'.format(filepath, temp.name)
-            if os.system(cmd) != 0:
-                raise ValueError(error_message.format('LAME could not read that .mp3 file.'))
+            with open(os.devnull, 'w') as fnull:
+                cmd = ['lame', '--decode', filepath, temp.name]
+                if subprocess.call(cmd, stdout=fnull, stderr=fnull) != 0:
+                    raise ValueError(error_message.format('LAME could not read that .mp3 file.'))
             return wavfile.read(temp.name)
     else:
         raise NotImplementedError(error_message, 'file must have \'.wav\' or \'.mp3\' extension.')

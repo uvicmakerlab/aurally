@@ -24,12 +24,11 @@ def load(filepath):
     if extension.lower() == '.wav':
         return wavfile.read(filepath)
     elif extension.lower() == '.mp3':
-        with tempfile.NamedTemporaryFile(suffix='.wav') as temp:
-            with open(os.devnull, 'w') as fnull:
-                cmd = ['lame', '--decode', filepath, temp.name]
-                if subprocess.call(cmd, stdout=fnull, stderr=fnull) != 0:
-                    raise ValueError(error_message.format('LAME could not read that .mp3 file.'))
-            return wavfile.read(temp.name)
+        with tempfile.TemporaryFile() as temp, open(os.devnull, 'w') as null:
+            cmd = ['lame', '--decode', filepath, temp.name]
+            if subprocess.call(cmd, stdout=null, stderr=null) != 0:
+                raise ValueError(error_message.format('LAME could not read that .mp3 file.'))
+        return wavfile.read(temp.name)
     else:
         raise NotImplementedError(error_message, 'file must have \'.wav\' or \'.mp3\' extension.')
 

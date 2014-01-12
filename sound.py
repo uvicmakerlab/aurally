@@ -1,4 +1,5 @@
 import os
+import copy
 import struct
 import tempfile
 import subprocess
@@ -34,17 +35,17 @@ def load(filepath):
 
     filename, extension = os.path.splitext(filepath)
     if extension.lower() == '.wav':
-        return _loadWav(filepath)
+        return _load_wav(filepath)
     elif extension.lower() == '.mp3':
         with tempfile.TemporaryFile() as temp, open(os.devnull, 'w') as null:
             cmd = ['lame', '--decode', filepath, temp.name]
             if subprocess.call(cmd, stdout=null, stderr=null) != 0:
                 raise ValueError(error_message.format('LAME could not read that .mp3 file.'))
-        return _loadWav(temp.name)
+        return _load_wav(temp.name)
     else:
         raise NotImplementedError(error_message, 'file must have \'.wav\' or \'.mp3\' extension.')
 
-def _loadWav(filename):
+def _load_wav(filename):
     """
     Helper for sound.load. Needed number of samples from wavfile, which scypi.io.wavfile doesn't
     return. Please use the sound.load function for public file reading.
@@ -95,6 +96,23 @@ def _loadWav(filename):
 
         return Wav(num_channels, sample_rate, samples)
 
+def flatten_to_mono(wav):
+    """
+    Flattens the PCM data in wav (a Wav class instance) to mono if it's not mono already.
+
+    Does not modify wav, returns a new Wav instance.
+    """
+
+    num_channels = wav.num_channels
+    if num_channels == 1:
+        return wav
+
+    sample_rate = wav.sample_rate
+    num_frames = len(wav.sample_data) / num_channels
+    samples = np.fromiter((np.sum(wav.sample_data[i * num_channels:i * num_channels + num_channels]) for i in range(num_frames)), dtype='int8')
+
+    return Wav(1, sample_rate, samples)
+
 
 
 import unittest
@@ -129,8 +147,23 @@ class SoundTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix='.mp3') as f:
             self.assertRaises(ValueError, load, f.name)
 
+    def test_flattenToMono_arrayOfOnes_sumEqualsFrameWidth(self):
+        channels = 2
+        rate = 44100
+        num_frames = 10
+        num_samples = num_frames * channels
+        samples = np.ones(shape=(num_samples,), dtype='int8')
+
+        w = Wav(channels, rate, samples)
+        m = flatten_to_mono(w)
+
+        self.assertEquals(m.num_channels, 1)
+        self.assertEquals(m.sample_rate, rate)
+        self.assertEquals(len(m.sample_data), num_frames)
+        self.assertTrue(np.array_equal(m.sample_data, channels * w.sample_data[::channels]))
+
 
 
 if __name__ == '__main__':
     unittest.main()
-
+    

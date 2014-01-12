@@ -116,12 +116,12 @@ def flatten_to_mono(wav):
 
 def normalize(wav):
     samples = wav.sample_data[:]
-    peakVal = float(np.amax(np.absolute(samples))
+    peakVal = np.amax(np.absolute(samples)
 
     if peakVal == 0:
         raise ValueError('Wav file is completely silent, nothing to normalize!')
 
-    return Wav(wav.num_channels, wav.sample_rate, samples / peakVal)
+    return Wav(wav.num_channels, wav.sample_rate, samples / float(peakVal))
 
 def _h(x):
 	return (x + abs(x)) / 2

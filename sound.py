@@ -1,13 +1,25 @@
 import os
+import struct
 import tempfile
 import subprocess
-import scipy.io.wavfile as wavfile
+import numpy as np
+
+class Wav:
+    """
+    Intended as a sort of 'struct' to hold WAV file data.
+
+    Use the sound.load function to load a WAV file.
+    """
+    def __init__(self, numChannels=None, sampleRate=None, sampleData=None):
+        self.num_channels = numChannels
+        self.sample_rate = sampleRate
+        self.sample_data = sampleData
 
 def load(filepath):
     """
     Loads a .wav or .mp3 file from the given filepath.
 
-    Returns (sample rate, array of samples) tuple.
+    Returns instance of the Wav class.
     """
 
     error_message = 'filepath was ' + repr(filepath) + ', {0}'
@@ -22,15 +34,66 @@ def load(filepath):
 
     filename, extension = os.path.splitext(filepath)
     if extension.lower() == '.wav':
-        return wavfile.read(filepath)
+        return _loadWav(filepath)
     elif extension.lower() == '.mp3':
         with tempfile.TemporaryFile() as temp, open(os.devnull, 'w') as null:
             cmd = ['lame', '--decode', filepath, temp.name]
             if subprocess.call(cmd, stdout=null, stderr=null) != 0:
                 raise ValueError(error_message.format('LAME could not read that .mp3 file.'))
-        return wavfile.read(temp.name)
+        return _loadWav(temp.name)
     else:
         raise NotImplementedError(error_message, 'file must have \'.wav\' or \'.mp3\' extension.')
+
+def _loadWav(filename):
+    """
+    Helper for sound.load. Needed number of samples from wavfile, which scypi.io.wavfile doesn't
+    return. Please use the sound.load function for public file reading.
+    """
+
+    with open(filename, 'rb') as wav:
+        riff_letters = wav.read(4)
+        if riff_letters != 'RIFF':
+            raise ValueError('Not a WAV file, no \'RIFF\' letters in header.')
+
+        # Chunk size
+        garbage = wav.read(4)
+
+        wave_letters = wav.read(4)
+        if wave_letters != 'WAVE':
+            raise ValueError('Not a WAV file, no \'WAVE\' letters in header.')
+
+        fmt_letters = wav.read(4)
+        if fmt_letters != 'fmt ':
+            raise ValueError('Not a wav file, no \'fmt \' letters in format subchunk.')
+
+        # Format chunk size.
+        garbage = wav.read(4)
+
+        audio_format = wav.read(2)
+        if audio_format != 1:
+            ValueError('Compressed WAV file, cannot read.')
+
+        num_channels = struct.unpack('h', wav.read(2))[0]
+        sample_rate = struct.unpack('i', wav.read(4))[0]
+        
+        # 4 bytes (uint32):
+        #     byte_rate == sample_rate * num_channels * bits_per_sample / 8
+        # 2 bytes (uint16):
+        #     block_align == num_channels * bits_per_sample / 8
+        #     (num bytes for one frame, which is a sample that includes all channels)
+        # 2 bytes (uint16):
+        #     bits_per_sample == num bits in one sample (assumed to be 8)
+        garbage = wav.read(4 + 2 + 2)
+
+        data_letters = wav.read(4)
+        if data_letters != 'data':
+            raise ValueError('Not a WAV file, no \'data\' letters in data subchunk.')
+
+        # Size of the rest of the file, the PCM data.
+        data_size = struct.unpack('i', wav.read(4))[0]
+        samples = np.fromstring(wav.read(data_size), dtype='int8')
+
+        return Wav(num_channels, sample_rate, samples)
 
 
 

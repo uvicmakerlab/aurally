@@ -4,6 +4,7 @@ import struct
 import tempfile
 import subprocess
 import numpy as np
+from __future__ import  division
 
 class Wav:
     """
@@ -115,6 +116,15 @@ def flatten_to_mono(wav):
 
 
 
+def _h(x):
+	return (x + abs(x)) / 2
+	
+def spectral_difference(n, stft):
+	abs_stft = np.absolute(stft(n))
+	sd = _h(abs_stft(n) - abs_stft(n-1))**2
+	return np.sum(sd[len(sd)/2 - 1:]) / N
+	
+
 import unittest
 
 class SoundTest(unittest.TestCase):
@@ -166,4 +176,4 @@ class SoundTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    
+

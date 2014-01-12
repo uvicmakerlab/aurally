@@ -114,8 +114,6 @@ def flatten_to_mono(wav):
 
     return Wav(1, sample_rate, samples)
 
-
-
 def _h(x):
 	return (x + abs(x)) / 2
 	
@@ -124,6 +122,7 @@ def spectral_difference(n, stft):
 	sd = _h(abs_stft(n) - abs_stft(n-1))**2
 	return np.sum(sd[len(sd)/2 - 1:]) / N
 	
+
 
 import unittest
 

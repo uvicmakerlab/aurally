@@ -56,7 +56,6 @@ def _load_wav(filename):
     Helper for sound.load. Needed number of samples from wavfile, which scypi.io.wavfile doesn't
     return. Please use the sound.load function for public file reading.
     """
-
     with open(filename, 'rb') as wav:
         riff_letters = wav.read(4)
         if riff_letters != 'RIFF':
@@ -178,6 +177,20 @@ class SoundTest(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix='.mp3') as f:
             self.assertRaises(ValueError, load, f.name)
 
+    def test_load_noise_noErrors(self):
+        sample_rate = 44100
+        num_channels = 2
+        duration = 1
+        num_samples = sample_rate * duration
+        data_size = num_samples * num_channels
+        filepath = 'noise.wav'
+        hiss = SoundTest.noise(sample_rate, duration, num_channels, filepath)
+        w = load(filepath)
+        self.assertEqual(sample_rate, w.sample_rate)
+        self.assertEqual(num_channels, w.num_channels)
+        self.assertEqual(data_size, w.sample_data.size)
+        self.assertTrue(np.array_equal(hiss, w.sample_data))
+
     def test_flattenToMono_arrayOfOnes_sumEqualsFrameWidth(self):
         channels = 4
         rate = 44100
@@ -238,7 +251,8 @@ class SoundTest(unittest.TestCase):
         self.assertTrue(np.array_equal(n.sample_data, np.ones(shape=(4096,), dtype='int8')))
 
     # Helper Methods
-    def which(self, executable_path):
+    @staticmethod
+    def which(executable_path):
         def is_exe(filepath):
             return os.path.isfile(filepath) and os.access(filepath, os.X_OK)
 
@@ -253,6 +267,30 @@ class SoundTest(unittest.TestCase):
                     return exe_file
 
         return None
+
+    # Returns white noise hiss as numpy array.
+    # frequency -- in Hz.
+    # sample_rate -- in Hz.
+    # coefficient -- i.e. a * sin(). float.
+    # duration -- in seconds.
+    # num_channels -- number of audio channels.
+    # filepath -- if a filepath, samples will be saved filepath as a WAV file.
+    #             if None (default), no file output.
+    #             Returns samples in either case.
+    @staticmethod
+    def noise(sample_rate=44100, duration=4, num_channels=2, filepath=None):
+        num_samples = sample_rate * duration
+        hiss = np.fromstring(np.random.bytes(num_samples * num_channels), dtype='int8')
+
+        if filepath is not None:
+            import wave
+            bytes_per_sample = 2 # 16 bits = 2 bytes
+            f = wave.open(filepath, 'w')
+            f.setparams((num_channels, bytes_per_sample, sample_rate, num_samples, 'NONE', 'not compressed'))
+            f.writeframes(hiss.tostring())
+            f.close()
+        
+        return hiss
 
 
 

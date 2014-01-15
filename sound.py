@@ -27,7 +27,6 @@ def load(filepath):
 
     Returns instance of the Wav class.
     """
-
     error_message = 'filepath was ' + repr(filepath) + ', {0}'
     if filepath is None:
         raise ValueError(error_message.format('cannot be None.'))
@@ -57,47 +56,30 @@ def _load_wav(filename):
     return. Please use the sound.load function for public file reading.
     """
     with open(filename, 'rb') as wav:
-        riff_letters = wav.read(4)
-        if riff_letters != 'RIFF':
+        if wav.read(4) != b'RIFF':
             raise ValueError('Not a WAV file, no \'RIFF\' letters in header.')
 
-        # Chunk size
-        garbage = wav.read(4)
+        # Add 8 for the 8 bytes just read.
+        file_size = struct.unpack('I', wav.read(4))[0] + 8
 
-        wave_letters = wav.read(4)
-        if wave_letters != 'WAVE':
+        if wav.read(4) != b'WAVE':
             raise ValueError('Not a WAV file, no \'WAVE\' letters in header.')
 
-        fmt_letters = wav.read(4)
-        if fmt_letters != 'fmt ':
+        if wav.read(4) != b'fmt ':
             raise ValueError('Not a wav file, no \'fmt \' letters in format subchunk.')
 
-        # Format chunk size.
-        garbage = wav.read(4)
+        fmt_chunk = struct.unpack('IHHIIHH', wav.read(20))
+        size, audio_format, num_channels, sample_rate, _, _, bits_per_sample = fmt_chunk
 
-        audio_format = wav.read(2)
         if audio_format != 1:
-            ValueError('Compressed WAV file, cannot read.')
+            raise ValueError('Compressed WAV file, cannot read.')
 
-        num_channels = struct.unpack('h', wav.read(2))[0]
-        sample_rate = struct.unpack('i', wav.read(4))[0]
-        
-        # 4 bytes (uint32):
-        #     byte_rate == sample_rate * num_channels * bits_per_sample / 8
-        # 2 bytes (uint16):
-        #     block_align == num_channels * bits_per_sample / 8
-        #     (num bytes for one frame, which is a sample that includes all channels)
-        # 2 bytes (uint16):
-        #     bits_per_sample == num bits in one sample (assumed to be 8)
-        garbage = wav.read(4 + 2 + 2)
-
-        data_letters = wav.read(4)
-        if data_letters != 'data':
+        if wav.read(4) != b'data':
             raise ValueError('Not a WAV file, no \'data\' letters in data subchunk.')
 
         # Size of the rest of the file, the PCM data.
-        data_size = struct.unpack('i', wav.read(4))[0]
-        samples = np.fromstring(wav.read(data_size), dtype='int8')
+        data_size = struct.unpack('I', wav.read(4))[0]
+        samples = np.fromfile(wav, dtype='int8', count=data_size)
 
         return Wav(num_channels, sample_rate, samples)
 
@@ -108,7 +90,6 @@ def flatten_to_mono(wav):
 
     Does not modify wav, returns a new Wav instance.
     """
-
     num_channels = wav.num_channels
     if num_channels == 1:
         return wav

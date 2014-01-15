@@ -79,7 +79,7 @@ def _load_wav(filename):
 
         # Size of the rest of the file, the PCM data.
         data_size = struct.unpack('I', wav.read(4))[0]
-        samples = np.fromfile(wav, dtype='int8', count=data_size)
+        samples = np.asarray(np.fromfile(wav, dtype='int8', count=data_size), dtype='float')
 
         return Wav(num_channels, sample_rate, samples)
 
@@ -96,7 +96,7 @@ def flatten_to_mono(wav):
 
     sample_rate = wav.sample_rate
     num_frames = int(len(wav.sample_data) / num_channels)
-    samples = np.fromiter((np.sum(wav.sample_data[i * num_channels:i * num_channels + num_channels]) for i in range(num_frames)), dtype='int8')
+    samples = np.fromiter((np.sum(wav.sample_data[i * num_channels:i * num_channels + num_channels]) for i in range(num_frames)), dtype='float')
 
     return Wav(1, sample_rate, samples)
 
@@ -111,7 +111,9 @@ def normalize(wav):
     if peakVal == 0:
         raise ValueError('Wav file is completely silent, nothing to normalize!')
 
-    return Wav(wav.num_channels, wav.sample_rate, samples / peakVal)
+    # Clip to range [-1, 1] to manage floating point errors.
+    samples = np.clip(samples / peakVal, -1.0, 1.0)
+    return Wav(wav.num_channels, wav.sample_rate, samples)
 
 @debug.trace(logging.DEBUG)
 def _h(x):
@@ -177,7 +179,7 @@ class SoundTest(unittest.TestCase):
         rate = 44100
         num_frames = 10
         num_samples = num_frames * channels
-        samples = np.ones(shape=(num_samples,), dtype='int8')
+        samples = np.ones(shape=(num_samples,), dtype='float')
 
         w = Wav(channels, rate, samples)
         m = flatten_to_mono(w)
@@ -192,7 +194,7 @@ class SoundTest(unittest.TestCase):
         rate = 44100
         num_frames = 10
         num_samples = num_frames * channels
-        samples = np.zeros(shape=(num_samples,), dtype='int8')
+        samples = np.zeros(shape=(num_samples,), dtype='float')
 
         w = Wav(channels, rate, samples)
         m = flatten_to_mono(w)
@@ -207,7 +209,7 @@ class SoundTest(unittest.TestCase):
         rate = 44100
         num_frames = 10
         num_samples = num_frames * channels
-        samples = np.array([np.arange(channels) for i in range(num_frames)], dtype='int8').flatten()
+        samples = np.array([np.arange(channels) for i in range(num_frames)], dtype='float').flatten()
 
         w = Wav(channels, rate, samples)
         m = flatten_to_mono(w)
@@ -215,21 +217,32 @@ class SoundTest(unittest.TestCase):
         self.assertEquals(m.num_channels, 1)
         self.assertEquals(m.sample_rate, rate)
         self.assertEquals(len(m.sample_data), num_frames)
-        compare = sum(range(channels)) * np.ones(shape=(len(w.sample_data[::channels]),), dtype='int8')
+        compare = sum(range(channels)) * np.ones(shape=(len(w.sample_data[::channels]),), dtype='float')
         self.assertTrue(np.array_equal(m.sample_data, compare))
 
     def test_normalize_nonMonoChannelWav_throwsValueError(self):
-        w = Wav(2, 41100, np.ones(shape=(4096,), dtype='int8'))
+        w = Wav(2, 41100, np.ones(shape=(4096,), dtype='float'))
         self.assertRaises(ValueError, normalize, w)
 
     def test_normalize_arrayOfZeros_throwsValueError(self):
-        w = Wav(1, 41100, np.zeros(shape=(4096,), dtype='int8'))
+        w = Wav(1, 41100, np.zeros(shape=(4096,), dtype='float'))
         self.assertRaises(ValueError, normalize, w)
 
     def test_normalize_arrayOfOnes_unchanged(self):
-        w = Wav(1, 44100, np.ones(shape=(4096,), dtype='int8'))
+        w = Wav(1, 44100, np.ones(shape=(4096,), dtype='float'))
         n = normalize(w)
-        self.assertTrue(np.array_equal(n.sample_data, np.ones(shape=(4096,), dtype='int8')))
+        self.assertEqual(1, n.num_channels)
+        self.assertEqual(44100, n.sample_rate)
+        self.assertTrue(np.array_equal(n.sample_data, np.ones(shape=(w.sample_data.size,), dtype='float')))
+
+    def test_normalize_noise_range0to1Afterwards(self):
+        hiss = SoundTest.noise()
+        w = Wav(1, 44100, hiss)
+        n = normalize(w)
+        self.assertEqual(1, n.num_channels)
+        self.assertEqual(44100, n.sample_rate)
+        self.assertEqual(w.sample_data.size, n.sample_data.size)
+        self.assertTrue(np.all([abs(x) <= 1 for x in n.sample_data]))
 
     # Helper Methods
     @staticmethod

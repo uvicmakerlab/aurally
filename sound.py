@@ -125,7 +125,13 @@ def spectral_difference(n, stft):
 	sd = _h(abs_stft(n) - abs_stft(n-1))**2
 	return np.sum(sd[len(sd)/2 - 1:]) / N
 	
-
+def stft(x, fs, framesz, hop):
+    framesamp = int(framesz*fs)
+    hopsamp = int(hop*fs)
+    w = scipy.hamming(framesamp)
+    X = scipy.array([scipy.fft(w*x[i:i+framesamp]) 
+                     for i in range(0, len(x)-framesamp, hopsamp)])
+    return X
 
 import unittest
 
